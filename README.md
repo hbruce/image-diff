@@ -15,6 +15,8 @@ Compile with
 ### Optional arguments
 `-o "diff.jpg"` output file (defaults to "file1_diff.jpg" if not set)
 
+`-m "mask.jpg"` mask file. Code will only check for difference where mask image pixel is 100% white (#FFFFFF)
+
 `-v` verbose
 
 `-s 20` sensitivity 20 (value between 0-100)
