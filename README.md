@@ -4,5 +4,4 @@ Command line tool to detect difference between two images
 
 # Compilation
 Compile with
-
-gcc -o image_diff jpeg_diff.c -ljpeg
+`$ gcc -o ./bin/image_diff ./src/image_diff.c -ljpeg`
