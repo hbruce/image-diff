@@ -350,6 +350,9 @@ int main(int argc, char* argv[]) {
     	if(strcmp(argv[arg], "-f2") == 0) {
 			infilename2 = argv[arg+1];
     	}
+    	if(strcmp(argv[arg], "-o") == 0) {
+			outfilename = argv[arg+1];
+    	}
     	if(strcmp(argv[arg], "-v") == 0) {
     		verbose = 1;
 			printf("verbose mode started\n");
@@ -373,7 +376,9 @@ int main(int argc, char* argv[]) {
 		printf("cluster_threshold_factor: %f\n", cluster_threshold_factor);
 	}
 
-	outfilename = str_replace(infilename2, ".jpg", "_diff.jpg");
+	if(strcmp(outfilename, "") == 0) {
+		outfilename = str_replace(infilename2, ".jpg", "_diff.jpg");
+	}
 
 	int cluster_hit_counter = read_jpeg_file2( infilename1, infilename2, sensitiviy, cluster_square_size, cluster_threshold_factor );
 	if( cluster_hit_counter < 0 ) {
