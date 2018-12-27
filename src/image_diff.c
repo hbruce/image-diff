@@ -16,10 +16,102 @@ unsigned char *raw_image_2 = NULL;
 unsigned char *diff_image = NULL;
 unsigned char *mask_image = NULL;
 
-int width = 640;
-int height = 480;
-int bytes_per_pixel = 3;   // or 1 for GRACYSCALE images
+int width;
+int height;
+int bytes_per_pixel;   // 3 for RGB, 1 for GRACYSCALE images
 int color_space = JCS_RGB; // or JCS_GRAYSCALE for grayscale images
+
+// default values
+int sensitiviy = 20;
+int cluster_square_size = 12;
+float cluster_threshold_factor = 0.5;
+int verbose = 0;
+int convert_to_grayscale_if_one_is_gray = 0;
+
+int grayscale_color_tolerance = 5;
+int pixel_count_threshold = 10;
+
+unsigned char *read_image(char *filename1) {
+	struct jpeg_decompress_struct cinfo;
+	struct jpeg_error_mgr jerr;
+	unsigned char *raw = NULL;
+	JSAMPROW row_pointer[1];
+	FILE *infile1 = fopen( filename1, "rb" );
+	unsigned long location1 = 0;
+	if ( !infile1 )
+	{
+		printf("Error opening jpeg file %s\n!", filename1 );
+		return NULL;
+	}
+	cinfo.err = jpeg_std_error( &jerr );
+	jpeg_create_decompress( &cinfo );
+	jpeg_stdio_src( &cinfo, infile1 );
+	jpeg_read_header( &cinfo, TRUE );
+	jpeg_start_decompress( &cinfo );
+	raw = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
+	width = cinfo.output_width;
+	height = cinfo.output_height;
+	bytes_per_pixel = cinfo.num_components;
+
+	row_pointer[0] = (unsigned char *)malloc( cinfo.output_width*cinfo.num_components );
+
+	while( cinfo.output_scanline < cinfo.image_height )
+	{
+		jpeg_read_scanlines( &cinfo, row_pointer, 1 );
+		for( int i=0; i<cinfo.image_width*cinfo.num_components;i++) {
+			raw[location1] = row_pointer[0][i];
+			location1++;
+		}
+	}
+	jpeg_finish_decompress( &cinfo );
+	jpeg_destroy_decompress( &cinfo );
+	free( row_pointer[0] );
+	fclose( infile1 );
+
+	return raw;
+}
+
+int max(int a, int b) {
+	if(a > b) { return a;}
+	return b;
+}
+int min(int a, int b) {
+	if(a < b) { return a;}
+	return b;
+}
+
+int image_is_grayscale(unsigned char *raw, int color_tolerance, int pixel_count_threshold) {
+	int number_of_color_pixels = 0;
+	for( unsigned long i=0; i < width * height * bytes_per_pixel; i+=3) {
+		int r = raw[i];
+		int g = raw[i+1];
+		int b = raw[i+2];
+		int diff = max(max(r,g),b) - min(min(r,g),b);
+
+		if(diff > 3) {
+			number_of_color_pixels++;
+		}
+	}
+
+	if(number_of_color_pixels > pixel_count_threshold) {
+		return 0;
+	} else {
+		return 1;
+	}
+}
+
+void make_image_grayscale(unsigned char *raw) {
+	// make image gray scale
+	for( unsigned long i=0; i < width * height * bytes_per_pixel; i+=3) {
+		int r = raw[i];
+		int g = raw[i+1];
+		int b = raw[i+2];
+		int avg = (r+g+b) / 3;
+		raw[i] = avg;
+		raw[i+1] = avg;
+		raw[i+2] = avg;
+	}
+}
 
 int compare_images( char *filename1, char *filename2, int sensitiviy, int cluster_square_size, float cluster_threshold_factor, char *maskfilename )
 {
@@ -32,71 +124,16 @@ int compare_images( char *filename1, char *filename2, int sensitiviy, int cluste
 
 
 	// Read file 1
-	FILE *infile1 = fopen( filename1, "rb" );
-	unsigned long location1 = 0;
-	if ( !infile1 )
-	{
-		printf("Error opening jpeg file %s\n!", filename1 );
-		return -1;
-	}
-	cinfo.err = jpeg_std_error( &jerr );
-	jpeg_create_decompress( &cinfo );
-	jpeg_stdio_src( &cinfo, infile1 );
-	jpeg_read_header( &cinfo, TRUE );
-	jpeg_start_decompress( &cinfo );
-	raw_image_1 = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
-	row_pointer[0] = (unsigned char *)malloc( cinfo.output_width*cinfo.num_components );
-	while( cinfo.output_scanline < cinfo.image_height )
-	{
-		jpeg_read_scanlines( &cinfo, row_pointer, 1 );
-		for( int i=0; i<cinfo.image_width*cinfo.num_components;i++) {
-			raw_image_1[location1] = row_pointer[0][i];
-			location1++;
-		}
-	}
-	jpeg_finish_decompress( &cinfo );
-	jpeg_destroy_decompress( &cinfo );
-	free( row_pointer[0] );
-	fclose( infile1 );
-
-
-
+	raw_image_1 = read_image(filename1);
 
 	// Read mask file, if any
 	if(strcmp(maskfilename, "") != 0) {
-		FILE *maskfile = fopen( maskfilename, "rb" );
-		unsigned long location_mask = 0;
-		if ( !maskfile )
-		{
-			printf("Error opening jpeg file %s\n!", maskfilename );
-			return -1;
-		}
-		cinfo.err = jpeg_std_error( &jerr );
-		jpeg_create_decompress( &cinfo );
-		jpeg_stdio_src( &cinfo, maskfile );
-		jpeg_read_header( &cinfo, TRUE );
-		jpeg_start_decompress( &cinfo );
-		mask_image = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
-		row_pointer[0] = (unsigned char *)malloc( cinfo.output_width*cinfo.num_components );
-		while( cinfo.output_scanline < cinfo.image_height )
-		{
-			jpeg_read_scanlines( &cinfo, row_pointer, 1 );
-			for( int i=0; i<cinfo.image_width*cinfo.num_components;i++) {
-				mask_image[location_mask] = row_pointer[0][i];
-				location_mask++;
-			}
-		}
-		jpeg_finish_decompress( &cinfo );
-		jpeg_destroy_decompress( &cinfo );
-		free( row_pointer[0] );
-		fclose( maskfile );
+		mask_image = read_image(maskfilename);
 		use_mask = 1;
 	}
 
-
-
-
 	// Read file 2
+
 	FILE *infile2 = fopen( filename2, "rb" );
 	unsigned long location2 = 0;
 	if ( !infile2 )
@@ -112,9 +149,7 @@ int compare_images( char *filename1, char *filename2, int sensitiviy, int cluste
 
 	raw_image_2 = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
 	diff_image = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
-	width = cinfo.output_width;
-	height = cinfo.output_height;
-	
+
 	row_pointer[0] = (unsigned char *)malloc( cinfo.output_width*cinfo.num_components );
 
 	while( cinfo.output_scanline < cinfo.image_height )
@@ -123,19 +158,55 @@ int compare_images( char *filename1, char *filename2, int sensitiviy, int cluste
 		for( int i=0; i<cinfo.image_width*cinfo.num_components;i++) {
 			raw_image_2[location2] = row_pointer[0][i];
 
-			if( ((use_mask == 1) && (mask_image[location2] == 255)) || (use_mask == 0) ) {
-				diff_image[location2] = abs(row_pointer[0][i] - raw_image_1[location2]);
-			}
+			// if( ((use_mask == 1) && (mask_image[location2] == 255)) || (use_mask == 0) ) {
+			// 	diff_image[location2] = abs(row_pointer[0][i] - raw_image_1[location2]);
+			// }
 
 			location2++;
 		}
 	}
+
+
 
 	jpeg_finish_decompress( &cinfo );
 	jpeg_destroy_decompress( &cinfo );
 
 	free( row_pointer[0] );
 	fclose( infile2 );
+
+
+	if(convert_to_grayscale_if_one_is_gray == 1) {
+		// check if image is grayscale
+		int image_1_is_grayscale = image_is_grayscale(raw_image_1, grayscale_color_tolerance, pixel_count_threshold);
+		if(verbose == 1) {
+			printf("%s is grayscale: %d\n", filename1, image_1_is_grayscale);
+		}
+		// check if image is grayscale
+		int image_2_is_grayscale = image_is_grayscale(raw_image_2, grayscale_color_tolerance, pixel_count_threshold);
+		if(verbose == 1) {
+			printf("%s is grayscale: %d\n", filename2, image_2_is_grayscale);
+		}
+
+
+		// If one of the images are grayscale, convert the other one to grayscale
+		if(image_1_is_grayscale == 1 && image_2_is_grayscale == 0) {
+			// make image gray scale
+			make_image_grayscale(raw_image_2);
+		}
+		if(image_1_is_grayscale == 0 && image_2_is_grayscale == 1) {
+			// make image gray scale
+			make_image_grayscale(raw_image_1);
+		}
+	}
+
+
+	// calculate diff image
+	for( unsigned long i=0; i < width * height * bytes_per_pixel; i+=3) {
+		if( ((use_mask == 1) && (mask_image[i] == 255)) || (use_mask == 0) ) {
+			diff_image[i] = abs(raw_image_2[i] - raw_image_1[i]);
+		}
+	}
+
 
 
 	// Make diff image green if different
@@ -158,50 +229,44 @@ int compare_images( char *filename1, char *filename2, int sensitiviy, int cluste
 	for (int x = 0; x < cinfo.image_width - cluster_square_size; x += cluster_square_size/2) {
 		for (int y = 0; y < cinfo.image_height - cluster_square_size; y += cluster_square_size/2) {
 
-			// Avoid the upper left corner due to the time counter there
-			if(x > 240 || y > 20) {
+	    	int diff_pixels_count = 0;
 
-			    	int diff_pixels_count = 0;
+	    	// loop the cluster square
+			for (int square_x = 0; square_x <= cluster_square_size; square_x++) {
+			    for (int square_y = 0; square_y <= cluster_square_size; square_y++) {
 
-			    	// loop the cluster square
-					for (int square_x = 0; square_x <= cluster_square_size; square_x++) {
-					    for (int square_y = 0; square_y <= cluster_square_size; square_y++) {
-
-					    	if(diff_image[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 1] == 255) {
-					    		diff_pixels_count++;
-					    	}
-					        
-						}
-					}
-
-
-					// are there enough number of pixels with diff in this square to consider it a "hit" ?
-					if(diff_pixels_count > cluster_square_size * cluster_square_size * cluster_threshold_factor) {
-
-						cluster_hit_counter++;
-
-						// draw a square around the cluster
-						for (int square_x = 0; square_x <= cluster_square_size; square_x++) {
-						    for (int square_y = 0; square_y <= cluster_square_size; square_y++) {
-
-						    	if(square_x == 0 || square_x == cluster_square_size) {
-							    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 0] = 255;
-							    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 1] = 0;
-							    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 2] = 0;
-						    	}
-
-						    	if(square_y == 0 || square_y == cluster_square_size) {
-							    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 0] = 255;
-							    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 1] = 0;
-							    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 2] = 0;
-						    	}
-						        
-							}
-						}
-					}
-
+			    	if(diff_image[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 1] == 255) {
+			    		diff_pixels_count++;
+			    	}
+			        
+				}
 			}
 
+
+			// are there enough number of pixels with diff in this square to consider it a "hit" ?
+			if(diff_pixels_count > cluster_square_size * cluster_square_size * cluster_threshold_factor) {
+
+				cluster_hit_counter++;
+
+				// draw a square around the cluster
+				for (int square_x = 0; square_x <= cluster_square_size; square_x++) {
+				    for (int square_y = 0; square_y <= cluster_square_size; square_y++) {
+
+				    	if(square_x == 0 || square_x == cluster_square_size) {
+					    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 0] = 255;
+					    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 1] = 0;
+					    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 2] = 0;
+				    	}
+
+				    	if(square_y == 0 || square_y == cluster_square_size) {
+					    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 0] = 255;
+					    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 1] = 0;
+					    	raw_image_2[(x+square_x + (y+square_y)*cinfo.image_width)*3 + 2] = 0;
+				    	}
+				        
+					}
+				}
+			}
 
 		}
 	}
@@ -311,11 +376,6 @@ int main(int argc, char* argv[]) {
 	char *outfilename = "";
 	char *maskfilename = "";
 
-	// default values
-	int sensitiviy = 20;
-	int cluster_square_size = 12;
-	float cluster_threshold_factor = 0.5;
-	int verbose = 0;
 
 	// handle arguments
 	for (int arg = 0; arg < argc; ++arg)
@@ -344,6 +404,9 @@ int main(int argc, char* argv[]) {
     	}
     	if(strcmp(argv[arg], "-t") == 0) {
     		cluster_threshold_factor = atof(argv[arg+1]);
+    	}
+    	if(strcmp(argv[arg], "-g") == 0) {
+    		convert_to_grayscale_if_one_is_gray = 1;
     	}
     }
 

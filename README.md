@@ -25,6 +25,8 @@ Compile with
 
 `-t 0.5` cluster threshold factor 0.5 (value between 0-1)
 
+`-g` convert color image to grayscale (if one of the images are grayscale)
+
 ### Run program
 Run with default values:
 
