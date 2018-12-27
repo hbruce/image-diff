@@ -14,108 +14,38 @@
 unsigned char *raw_image_1 = NULL;
 unsigned char *raw_image_2 = NULL;
 unsigned char *diff_image = NULL;
+unsigned char *mask_image = NULL;
 
 int width = 640;
 int height = 480;
 int bytes_per_pixel = 3;   // or 1 for GRACYSCALE images
 int color_space = JCS_RGB; // or JCS_GRAYSCALE for grayscale images
-/*
-*/
 
-int read_jpeg_file( char *filename, int image_id )
+int compare_images( char *filename1, char *filename2, int sensitiviy, int cluster_square_size, float cluster_threshold_factor, char *maskfilename )
 {
 	struct jpeg_decompress_struct cinfo;
 	struct jpeg_error_mgr jerr;
 
 	JSAMPROW row_pointer[1];
-	
-	FILE *infile = fopen( filename, "rb" );
-	unsigned long location = 0;
-	int i = 0;
-	
-	if ( !infile )
-	{
-		printf("Error opening jpeg file %s\n!", filename );
-		return -1;
-	}
-	cinfo.err = jpeg_std_error( &jerr );
-	jpeg_create_decompress( &cinfo );
-	jpeg_stdio_src( &cinfo, infile );
-	jpeg_read_header( &cinfo, TRUE );
-	jpeg_start_decompress( &cinfo );
+	int use_mask = 0;
 
-	if(image_id == 1) {
-		raw_image_1 = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
-	}
-	if(image_id == 2) {
-		raw_image_2 = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
-		diff_image = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
-	}
 
-	row_pointer[0] = (unsigned char *)malloc( cinfo.output_width*cinfo.num_components );
 
-	while( cinfo.output_scanline < cinfo.image_height )
-	{
-		jpeg_read_scanlines( &cinfo, row_pointer, 1 );
-		for( i=0; i<cinfo.image_width*cinfo.num_components;i++) {
-
-			if(image_id == 1) {
-				raw_image_1[location] = row_pointer[0][i];
-			}
-			if(image_id == 2) {
-				raw_image_2[location] = row_pointer[0][i]/2;
-
-				// diff_image[location] = abs(raw_image_2[location] - raw_image_1[location]);
-				// location++;
-				// if( (i+1) % 3 == 0) {
-				// 	// $diff_avg = (abs($r1 - $r2) + abs($g1 - $g2) + abs($b1 - $b2)) / 3;
-				// }
-			}
-			location++;
-		}
-	}
-
-	jpeg_finish_decompress( &cinfo );
-	jpeg_destroy_decompress( &cinfo );
-
-	free( row_pointer[0] );
-	fclose( infile );
-
-	return 1;
-}
-
-int read_jpeg_file2( char *filename1, char *filename2, int sensitiviy, int cluster_square_size, float cluster_threshold_factor )
-{
-	struct jpeg_decompress_struct cinfo;
-	struct jpeg_error_mgr jerr;
-
-	JSAMPROW row_pointer[1];
-	
+	// Read file 1
 	FILE *infile1 = fopen( filename1, "rb" );
-	FILE *infile2 = fopen( filename2, "rb" );
 	unsigned long location1 = 0;
-	unsigned long location2 = 0;
-	
 	if ( !infile1 )
 	{
 		printf("Error opening jpeg file %s\n!", filename1 );
 		return -1;
 	}
-	if ( !infile2 )
-	{
-		printf("Error opening jpeg file %s\n!", filename2 );
-		return -1;
-	}
-
 	cinfo.err = jpeg_std_error( &jerr );
 	jpeg_create_decompress( &cinfo );
 	jpeg_stdio_src( &cinfo, infile1 );
 	jpeg_read_header( &cinfo, TRUE );
 	jpeg_start_decompress( &cinfo );
-
 	raw_image_1 = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
 	row_pointer[0] = (unsigned char *)malloc( cinfo.output_width*cinfo.num_components );
-
 	while( cinfo.output_scanline < cinfo.image_height )
 	{
 		jpeg_read_scanlines( &cinfo, row_pointer, 1 );
@@ -124,16 +54,56 @@ int read_jpeg_file2( char *filename1, char *filename2, int sensitiviy, int clust
 			location1++;
 		}
 	}
-
 	jpeg_finish_decompress( &cinfo );
 	jpeg_destroy_decompress( &cinfo );
-
 	free( row_pointer[0] );
 	fclose( infile1 );
 
 
 
 
+	// Read mask file, if any
+	if(strcmp(maskfilename, "") != 0) {
+		FILE *maskfile = fopen( maskfilename, "rb" );
+		unsigned long location_mask = 0;
+		if ( !maskfile )
+		{
+			printf("Error opening jpeg file %s\n!", maskfilename );
+			return -1;
+		}
+		cinfo.err = jpeg_std_error( &jerr );
+		jpeg_create_decompress( &cinfo );
+		jpeg_stdio_src( &cinfo, maskfile );
+		jpeg_read_header( &cinfo, TRUE );
+		jpeg_start_decompress( &cinfo );
+		mask_image = (unsigned char*)malloc( cinfo.output_width*cinfo.output_height*cinfo.num_components );
+		row_pointer[0] = (unsigned char *)malloc( cinfo.output_width*cinfo.num_components );
+		while( cinfo.output_scanline < cinfo.image_height )
+		{
+			jpeg_read_scanlines( &cinfo, row_pointer, 1 );
+			for( int i=0; i<cinfo.image_width*cinfo.num_components;i++) {
+				mask_image[location_mask] = row_pointer[0][i];
+				location_mask++;
+			}
+		}
+		jpeg_finish_decompress( &cinfo );
+		jpeg_destroy_decompress( &cinfo );
+		free( row_pointer[0] );
+		fclose( maskfile );
+		use_mask = 1;
+	}
+
+
+
+
+	// Read file 2
+	FILE *infile2 = fopen( filename2, "rb" );
+	unsigned long location2 = 0;
+	if ( !infile2 )
+	{
+		printf("Error opening jpeg file %s\n!", filename2 );
+		return -1;
+	}
 	cinfo.err = jpeg_std_error( &jerr );
 	jpeg_create_decompress( &cinfo );
 	jpeg_stdio_src( &cinfo, infile2 );
@@ -152,7 +122,11 @@ int read_jpeg_file2( char *filename1, char *filename2, int sensitiviy, int clust
 		jpeg_read_scanlines( &cinfo, row_pointer, 1 );
 		for( int i=0; i<cinfo.image_width*cinfo.num_components;i++) {
 			raw_image_2[location2] = row_pointer[0][i];
-			diff_image[location2] = abs(row_pointer[0][i] - raw_image_1[location2]);
+
+			if( ((use_mask == 1) && (mask_image[location2] == 255)) || (use_mask == 0) ) {
+				diff_image[location2] = abs(row_pointer[0][i] - raw_image_1[location2]);
+			}
+
 			location2++;
 		}
 	}
@@ -335,13 +309,15 @@ int main(int argc, char* argv[]) {
 	char *infilename1 = "";
 	char *infilename2 = "";
 	char *outfilename = "";
+	char *maskfilename = "";
 
+	// default values
 	int sensitiviy = 20;
 	int cluster_square_size = 12;
 	float cluster_threshold_factor = 0.5;
-
 	int verbose = 0;
 
+	// handle arguments
 	for (int arg = 0; arg < argc; ++arg)
     {
     	if(strcmp(argv[arg], "-f1") == 0) {
@@ -352,6 +328,9 @@ int main(int argc, char* argv[]) {
     	}
     	if(strcmp(argv[arg], "-o") == 0) {
 			outfilename = argv[arg+1];
+    	}
+    	if(strcmp(argv[arg], "-m") == 0) {
+			maskfilename = argv[arg+1];
     	}
     	if(strcmp(argv[arg], "-v") == 0) {
     		verbose = 1;
@@ -368,19 +347,21 @@ int main(int argc, char* argv[]) {
     	}
     }
 
+	if(strcmp(outfilename, "") == 0) {
+		outfilename = str_replace(infilename2, ".jpg", "_diff.jpg");
+	}
+
 	if(verbose == 1) {
-		printf("infilename1: %s\n", infilename1);
-		printf("infilename2: %s\n", infilename2);
+		printf("in filename1: %s\n", infilename1);
+		printf("in filename2: %s\n", infilename2);
+		printf("output filename: %s\n", outfilename);
+		printf("mask filename: %s\n", maskfilename);
 		printf("sensitiviy: %d\n", sensitiviy);
 		printf("cluster_square_size: %d\n", cluster_square_size);
 		printf("cluster_threshold_factor: %f\n", cluster_threshold_factor);
 	}
 
-	if(strcmp(outfilename, "") == 0) {
-		outfilename = str_replace(infilename2, ".jpg", "_diff.jpg");
-	}
-
-	int cluster_hit_counter = read_jpeg_file2( infilename1, infilename2, sensitiviy, cluster_square_size, cluster_threshold_factor );
+	int cluster_hit_counter = compare_images( infilename1, infilename2, sensitiviy, cluster_square_size, cluster_threshold_factor, maskfilename );
 	if( cluster_hit_counter < 0 ) {
 		printf("{\"error\":\"failed to compare images\"}");
 		return -1;
