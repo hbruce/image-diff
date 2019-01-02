@@ -27,9 +27,13 @@ int cluster_square_size = 12;
 float cluster_threshold_factor = 0.5;
 int verbose = 0;
 int convert_to_grayscale_if_one_is_gray = 0;
+int return_cluster_hits_coordinates = 0;
 
 int grayscale_color_tolerance = 5;
 int pixel_count_threshold = 10;
+
+int *cluster_hits_x;
+int *cluster_hits_y;
 
 unsigned char *read_image(char *filename1) {
 	struct jpeg_decompress_struct cinfo;
@@ -226,6 +230,10 @@ int compare_images( char *filename1, char *filename2, int sensitiviy, int cluste
 
 	int cluster_hit_counter = 0;
 
+	int max_nbr_of_cluster_blocks = (cinfo.image_width * cinfo.image_height) / (cluster_square_size/2);
+	cluster_hits_x = (int*) malloc(max_nbr_of_cluster_blocks * sizeof(int));
+	cluster_hits_y = (int*) malloc(max_nbr_of_cluster_blocks * sizeof(int));
+
 	for (int x = 0; x < cinfo.image_width - cluster_square_size; x += cluster_square_size/2) {
 		for (int y = 0; y < cinfo.image_height - cluster_square_size; y += cluster_square_size/2) {
 
@@ -245,6 +253,9 @@ int compare_images( char *filename1, char *filename2, int sensitiviy, int cluste
 
 			// are there enough number of pixels with diff in this square to consider it a "hit" ?
 			if(diff_pixels_count > cluster_square_size * cluster_square_size * cluster_threshold_factor) {
+
+				cluster_hits_x[cluster_hit_counter] = x;
+				cluster_hits_y[cluster_hit_counter] = y;
 
 				cluster_hit_counter++;
 
@@ -270,8 +281,6 @@ int compare_images( char *filename1, char *filename2, int sensitiviy, int cluste
 
 		}
 	}
-
-
 
 	return cluster_hit_counter;
 }
@@ -408,6 +417,9 @@ int main(int argc, char* argv[]) {
     	if(strcmp(argv[arg], "-g") == 0) {
     		convert_to_grayscale_if_one_is_gray = 1;
     	}
+    	if(strcmp(argv[arg], "-h") == 0) {
+    		return_cluster_hits_coordinates = 1;
+    	}
     }
 
 	if(strcmp(outfilename, "") == 0) {
@@ -438,10 +450,27 @@ int main(int argc, char* argv[]) {
 	}
 
 	if(cluster_hit_counter > 0) {
-		printf("{\"cluster_hit_counter\":%d, \"difference_image\":\"%s\"}", cluster_hit_counter, outfilename);
+		printf("{\n");
+		printf("\"cluster_hit_counter\":%d,\n", cluster_hit_counter);
+		printf("\"difference_image\":\"%s\"", outfilename);
+
+		if(return_cluster_hits_coordinates == 1) {
+			printf(",\n\"cluster_hits_coordinates\":[");
+			for(int i = 0; i < cluster_hit_counter; i++) {
+				printf("[%d,%d]", cluster_hits_x[i], cluster_hits_y[i]);
+				if(i < cluster_hit_counter - 1) {
+					printf(",");
+				}
+			}
+			printf("]");
+		}
+
+		printf("\n}");
 	} else {
 		printf("{\"cluster_hit_counter\":%d}", cluster_hit_counter);
 	}
+
+	free(cluster_hits_x);
 
 	return 0;
 }

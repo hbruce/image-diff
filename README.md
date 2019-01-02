@@ -27,6 +27,8 @@ Compile with
 
 `-g` convert color image to grayscale (if one of the images are grayscale)
 
+`-h` return cluster hits coordinates (upper left corner of each cluster)
+
 ### Run program
 Run with default values:
 
